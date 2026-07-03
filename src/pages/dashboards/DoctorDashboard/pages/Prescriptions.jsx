@@ -1,274 +1,164 @@
 import React, { useState, useEffect } from 'react'
-import { toast } from 'react-toastify'
 import LoadingSpinner from '../../../../components/common/LoadingSpinner/LoadingSpinner'
 import DataTable from '../../../../components/ui/Tables/DataTable'
 import Modal from '../../../../components/common/Modal/Modal'
-import { 
-  getDoctorPrescriptions, 
-  createPrescription, 
-  searchMedicines,
-  downloadPrescriptionPDF,
-  getDoctorPrescriptionDetails
-} from '../../../../services/prescriptionService'
-import { searchDoctorPatients } from '../../../../services/doctorApi'
 
 const Prescriptions = () => {
   const [loading, setLoading] = useState(true)
   const [prescriptions, setPrescriptions] = useState([])
   const [isNewModalOpen, setIsNewModalOpen] = useState(false)
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedPrescription, setSelectedPrescription] = useState(null)
-  const [medicineSearchResults, setMedicineSearchResults] = useState([])
-  const [searchingMedicines, setSearchingMedicines] = useState(false)
-  const [medicineSearchQuery, setMedicineSearchQuery] = useState('')
-  const [patients, setPatients] = useState([])
-  
   const [newPrescription, setNewPrescription] = useState({
-    patient_ref: '',
-    diagnosis: '',
-    symptoms: '',
-    medicines: [{
-      medicine_name: '',
-      medicine_id: '',
-      quantity: 1,
-      dosage_text: '',
-      frequency: '',
-      timing: {
-        morning: false,
-        afternoon: false,
-        night: false,
-        times: []
-      },
-      before_food: false,
-      after_food: false,
-      duration_days: 1,
-      route: 'ORAL',
-      instructions: ''
-    }],
-    general_instructions: '',
-    diet_instructions: '',
-    follow_up_date: ''
+    patient: '',
+    medicine: '',
+    dosage: '',
+    frequency: '',
+    duration: '',
+    instructions: '',
+    date: new Date().toISOString().split('T')[0]
   })
 
   useEffect(() => {
     loadPrescriptions()
-    loadPatients()
   }, [])
 
-  const loadPrescriptions = async (filters = {}) => {
-    try {
-      setLoading(true)
-      
-      let finalFilters = { ...filters }
-      if (!finalFilters.patient_ref) {
-        // Fetch patients to get a valid patient_ref and avoid backend 500 error
-        const patientsResponse = await searchDoctorPatients({});
-        const payload = await patientsResponse.json().catch(() => ({}));
-        const patientsData = payload?.patients || payload?.data?.patients || payload?.data || [];
-        if (patientsData.length > 0) {
-          finalFilters.patient_ref = patientsData[0].patientId || patientsData[0].patient_ref;
-        } else {
-          finalFilters.patient_ref = 'DUMMY';
-        }
-      }
-
-      const response = await getDoctorPrescriptions(finalFilters)
-      setPrescriptions(response || [])
-    } catch (error) {
-      console.error('Error loading prescriptions:', error)
-      toast.error('Failed to load prescriptions')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadPatients = async () => {
-    try {
-      // Fetch real patients for the doctor
-      const response = await searchDoctorPatients({});
-      const payload = await response.json().catch(() => ({}));
-      const patientsData = payload?.patients || payload?.data?.patients || payload?.data || [];
-      // map to { patient_id, name } which the component uses
-      const realPatients = (Array.isArray(patientsData) ? patientsData : []).map(p => ({
-        patient_id: p.patientId || p.patient_ref,
-        name: p.patient || p.patient_name || 'Unknown Patient'
-      }));
-      setPatients(realPatients);
-    } catch (error) {
-      console.error('Error fetching patients:', error);
-      toast.error('Failed to load patients for prescription');
-      setPatients([]);
-    }
-  }
-
-  const handleCreatePrescription = async () => {
-    try {
-      setLoading(true)
-      
-      // Validate form
-      if (!newPrescription.patient_ref || !newPrescription.diagnosis) {
-        toast.error('Please fill in all required fields')
-        return
-      }
-      
-      // Validate medicines
-      const validMedicines = newPrescription.medicines.filter(med => 
-        med.medicine_name && med.dosage_text && med.frequency && med.duration_days > 0
-      )
-      
-      if (validMedicines.length === 0) {
-        toast.error('Please add at least one valid medicine')
-        return
-      }
-      
-      const prescriptionData = {
-        ...newPrescription,
-        medicines: validMedicines
-      }
-      
-      const response = await createPrescription(prescriptionData)
-      
-      toast.success('Prescription created successfully!')
-      setIsNewModalOpen(false)
-      resetNewPrescriptionForm()
-      loadPrescriptions() // Reload prescriptions
-      
-    } catch (error) {
-      console.error('Error creating prescription:', error)
-      toast.error(error.response?.data?.detail || 'Failed to create prescription')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleViewPrescription = async (prescription) => {
-    try {
-      setLoading(true)
-      const details = await getDoctorPrescriptionDetails(prescription.prescription_id)
-      setSelectedPrescription(details)
-      setIsViewModalOpen(true)
-    } catch (error) {
-      console.error('Error fetching prescription details:', error)
-      toast.error('Failed to load prescription details')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDownloadPDF = async (prescription) => {
-    try {
-      await downloadPrescriptionPDF(prescription.prescription_id)
-      toast.success('PDF downloaded successfully!')
-    } catch (error) {
-      console.error('Error downloading PDF:', error)
-      toast.error('Failed to download PDF')
-    }
-  }
-
-  const handleMedicineSearch = async (query) => {
-    if (query.length < 2) {
-      setMedicineSearchResults([])
-      return
-    }
-    
-    try {
-      setSearchingMedicines(true)
-      const results = await searchMedicines(query)
-      setMedicineSearchResults(results || [])
-    } catch (error) {
-      console.error('Error searching medicines:', error)
-      toast.error('Failed to search medicines')
-    } finally {
-      setSearchingMedicines(false)
-    }
-  }
-
-  const addMedicine = () => {
-    setNewPrescription(prev => ({
-      ...prev,
-      medicines: [...prev.medicines, {
-        medicine_name: '',
-        medicine_id: '',
-        quantity: 1,
-        dosage_text: '',
-        frequency: '',
-        timing: {
-          morning: false,
-          afternoon: false,
-          night: false,
-          times: []
+  const loadPrescriptions = async () => {
+    setLoading(true)
+    setTimeout(() => {
+      setPrescriptions([
+        { 
+          id: 1, 
+          patient: "Ravi Kumar", 
+          medicine: "Paracetamol", 
+          dosage: "500mg", 
+          frequency: "Twice daily",
+          duration: "5 days", 
+          instructions: "After meals",
+          date: "2023-10-15" 
         },
-        before_food: false,
-        after_food: false,
-        duration_days: 1,
-        route: 'ORAL',
-        instructions: ''
-      }]
-    }))
+        { 
+          id: 2, 
+          patient: "Anita Sharma", 
+          medicine: "Ibuprofen", 
+          dosage: "400mg", 
+          frequency: "Three times daily",
+          duration: "3 days", 
+          instructions: "With plenty of water",
+          date: "2023-10-10" 
+        },
+        { 
+          id: 3, 
+          patient: "Suresh Patel", 
+          medicine: "Metformin", 
+          dosage: "500mg", 
+          frequency: "Once daily",
+          duration: "30 days", 
+          instructions: "With breakfast",
+          date: "2023-10-05" 
+        },
+        { 
+          id: 4, 
+          patient: "Priya Singh", 
+          medicine: "Sumatriptan", 
+          dosage: "50mg", 
+          frequency: "As needed",
+          duration: "As needed", 
+          instructions: "At onset of migraine",
+          date: "2023-09-28" 
+        }
+      ])
+      setLoading(false)
+    }, 1000)
   }
 
-  const removeMedicine = (index) => {
-    setNewPrescription(prev => ({
-      ...prev,
-      medicines: prev.medicines.filter((_, i) => i !== index)
-    }))
+  const handleCreatePrescription = () => {
+    const prescription = {
+      id: prescriptions.length + 1,
+      ...newPrescription
+    }
+    setPrescriptions(prev => [prescription, ...prev])
+    setIsNewModalOpen(false)
+    resetNewPrescriptionForm()
+    alert('Prescription created successfully!')
   }
 
-  const updateMedicine = (index, field, value) => {
-    setNewPrescription(prev => ({
-      ...prev,
-      medicines: prev.medicines.map((med, i) => 
-        i === index ? { ...med, [field]: value } : med
-      )
-    }))
+  const handleEditPrescription = (prescription) => {
+    setSelectedPrescription(prescription)
+    setIsEditModalOpen(true)
   }
 
-  const selectMedicine = (index, medicine) => {
-    setNewPrescription(prev => ({
-      ...prev,
-      medicines: prev.medicines.map((med, i) => 
-        i === index ? { 
-          ...med, 
-          medicine_name: medicine.brand_name || medicine.generic_name,
-          medicine_id: medicine.medicine_id,
-          dosage_text: `${medicine.strength || ''}`.trim(),
-          medicine_code: medicine.medicine_code
-        } : med
-      )
-    }))
-    setMedicineSearchResults([])
-    setMedicineSearchQuery('')
+  const handleUpdatePrescription = () => {
+    setPrescriptions(prev => prev.map(pres =>
+      pres.id === selectedPrescription.id ? selectedPrescription : pres
+    ))
+    setIsEditModalOpen(false)
+    setSelectedPrescription(null)
+    alert('Prescription updated successfully!')
+  }
+
+  const handleDeletePrescription = (prescriptionId) => {
+    if (window.confirm('Are you sure you want to delete this prescription?')) {
+      setPrescriptions(prev => prev.filter(pres => pres.id !== prescriptionId))
+      alert('Prescription deleted successfully!')
+    }
+  }
+
+  const handlePrintPrescription = (prescription) => {
+    const printWindow = window.open('', '_blank')
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Prescription - ${prescription.patient}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .patient-info { margin-bottom: 20px; }
+            .medicine-details { margin: 20px 0; }
+            .instructions { margin-top: 20px; }
+            .footer { margin-top: 40px; text-align: right; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Medical Prescription</h1>
+          </div>
+          <div class="patient-info">
+            <p><strong>Patient:</strong> ${prescription.patient}</p>
+            <p><strong>Date:</strong> ${prescription.date}</p>
+          </div>
+          <div class="medicine-details">
+            <h3>Prescribed Medicine:</h3>
+            <p><strong>Medicine:</strong> ${prescription.medicine}</p>
+            <p><strong>Dosage:</strong> ${prescription.dosage}</p>
+            <p><strong>Frequency:</strong> ${prescription.frequency}</p>
+            <p><strong>Duration:</strong> ${prescription.duration}</p>
+          </div>
+          <div class="instructions">
+            <h3>Instructions:</h3>
+            <p>${prescription.instructions}</p>
+          </div>
+          <div class="footer">
+            <p>Doctor's Signature</p>
+            <p>___________________</p>
+          </div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.print()
   }
 
   const resetNewPrescriptionForm = () => {
     setNewPrescription({
-      patient_ref: '',
-      diagnosis: '',
-      symptoms: '',
-      medicines: [{
-        medicine_name: '',
-        medicine_id: '',
-        quantity: 1,
-        dosage_text: '',
-        frequency: '',
-        timing: {
-          morning: false,
-          afternoon: false,
-          night: false,
-          times: []
-        },
-        before_food: false,
-        after_food: false,
-        duration_days: 1,
-        route: 'ORAL',
-        instructions: ''
-      }],
-      general_instructions: '',
-      diet_instructions: '',
-      follow_up_date: ''
+      patient: '',
+      medicine: '',
+      dosage: '',
+      frequency: '',
+      duration: '',
+      instructions: '',
+      date: new Date().toISOString().split('T')[0]
     })
-    setMedicineSearchResults([])
-    setMedicineSearchQuery('')
   }
 
   const handleInputChange = (field, value) => {
@@ -278,6 +168,35 @@ const Prescriptions = () => {
     }))
   }
 
+  const handleEditInputChange = (field, value) => {
+    setSelectedPrescription(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const patients = [
+    'Ravi Kumar',
+    'Anita Sharma',
+    'Suresh Patel',
+    'Priya Singh',
+    'Rajesh Kumar',
+    'New Patient'
+  ]
+
+  const commonMedicines = [
+    'Paracetamol',
+    'Ibuprofen',
+    'Amoxicillin',
+    'Cetirizine',
+    'Metformin',
+    'Atorvastatin',
+    'Aspirin',
+    'Omeprazole',
+    'Sumatriptan',
+    'Losartan'
+  ]
+
   const dosageOptions = [
     '250mg', '500mg', '750mg', '1000mg',
     '5mg', '10mg', '20mg', '40mg',
@@ -285,7 +204,6 @@ const Prescriptions = () => {
   ]
 
   const frequencyOptions = [
-    'OD', 'BD', 'TID', 'QID', 'SOS',
     'Once daily',
     'Twice daily',
     'Three times daily',
@@ -296,105 +214,71 @@ const Prescriptions = () => {
     'At bedtime'
   ]
 
-  const routeOptions = [
-    'ORAL', 'TOPICAL', 'INHALATION', 'IV', 'IM', 'SC', 'NASAL', 'OPHTHALMIC', 'OTIC'
-  ]
-
   if (loading) return <LoadingSpinner />
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h5 className="text-xl md:text-2xl lg:text-3xl font-semibold text-gray-700 text-responsive">
-          Prescriptions</h5>
+        <h2 className="text-xl md:text-2xl lg:text-3xl font-semibold text-gray-700 text-responsive">Prescriptions</h2>
         <button
           onClick={() => setIsNewModalOpen(true)}
-          className="btn btn-primary  btn-sm btn-mobile-full sm:w-auto flex items-center justify-center my-3"
+          className="btn btn-primary btn-mobile-full sm:w-auto flex items-center justify-center"
         >
-          <i className="fas fa-plus mr-2 "></i> New Prescription
+          <i className="fas fa-plus mr-2"></i> New Prescription
         </button>
       </div>
-
+      
+      {/* Data Table */}
       <DataTable
         columns={[
-          {
-            key: 'prescription_number',
-            title: 'Prescription #',
-            sortable: true,
-            className: 'text-left min-w-[140px]'
-          },
-          {
-            key: 'patient_name',
-            title: 'Patient',
-            sortable: true,
-            className: 'text-left min-w-[160px]'
-          },
-          {
-            key: 'diagnosis',
-            title: 'Diagnosis',
-            sortable: true,
-            className: 'text-left min-w-[180px]'
-          },
-          {
-            key: 'total_medicines',
-            title: 'Medicines',
-            sortable: true,
-            className: 'text-center min-w-[90px]'
-          },
-          {
-            key: 'prescription_date',
-            title: 'Date',
-            sortable: true,
-            className: 'text-center min-w-[120px]'
-          },
-          {
-            key: 'is_dispensed',
-            title: 'Status',
-            sortable: true,
-            className: 'text-center min-w-[100px]',
-            render: (_, row) => (
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                row.is_dispensed 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-yellow-100 text-yellow-800'
-              }`}>
-                {row.is_dispensed ? 'Dispensed' : 'Pending'}
-              </span>
-            )
-          },
+          { key: 'patient', title: 'Patient', sortable: true },
+          { key: 'medicine', title: 'Medicine', sortable: true },
+          { key: 'dosage', title: 'Dosage', sortable: true },
+          { key: 'frequency', title: 'Frequency', sortable: true },
+          { key: 'duration', title: 'Duration', sortable: true },
+          { key: 'date', title: 'Date', sortable: true },
           {
             key: 'actions',
             title: 'Actions',
-            className: 'text-center min-w-[140px]',
             render: (_, row) => (
-              <div className="flex items-center justify-center gap-2">
+              <div className="flex gap-2 justify-start">
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleViewPrescription(row)
+                    handleEditPrescription(row)
                   }}
-                  className="table-action-btn text-blue-600"
-                  title="View Details"
+                  className="text-blue-500 hover:text-blue-700 p-2 rounded hover:bg-blue-50 modal-touch-target"
+                  title="Edit Prescription"
                 >
-                  <i className="fas fa-eye"></i>
+                  <i className="fas fa-edit text-sm"></i>
                 </button>
-
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleDownloadPDF(row)
+                    handlePrintPrescription(row)
                   }}
-                  className="table-action-btn text-green-600"
-                  title="Download PDF"
+                  className="text-green-500 hover:text-green-700 p-2 rounded hover:bg-green-50 modal-touch-target"
+                  title="Print Prescription"
                 >
-                  <i className="fas fa-download"></i>
+                  <i className="fas fa-print text-sm"></i>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeletePrescription(row.id)
+                  }}
+                  className="text-red-500 hover:text-red-700 p-2 rounded hover:bg-red-50 modal-touch-target"
+                  title="Delete Prescription"
+                >
+                  <i className="fas fa-trash text-sm"></i>
                 </button>
               </div>
             )
           }
         ]}
         data={prescriptions}
+        onRowClick={(row) => console.log('Prescription clicked:', row)}
         selectable={false}
       />
 
@@ -408,11 +292,14 @@ const Prescriptions = () => {
             { name: 'Amoxicillin', use: 'Antibiotic', color: 'purple' },
             { name: 'Cetirizine', use: 'Antihistamine', color: 'yellow' }
           ].map((med, index) => (
-            <div
-              key={index}
+            <div 
+              key={index} 
               className="border rounded p-3 text-center hover:bg-gray-50 cursor-pointer card-hover transition-all duration-200"
               onClick={() => {
-                handleMedicineSearch(med.name)
+                setNewPrescription(prev => ({
+                  ...prev,
+                  medicine: med.name
+                }))
                 setIsNewModalOpen(true)
               }}
             >
@@ -432,271 +319,107 @@ const Prescriptions = () => {
           resetNewPrescriptionForm()
         }}
         title="Create New Prescription"
-        size="xl"
+        size="lg"
       >
-        <div className="modal-form max-h-[80vh] overflow-y-auto">
-          {/* Patient and Diagnosis Section */}
-          <div className="space-y-4 mb-6">
-            <h3 className="text-lg font-semibold text-gray-800">Patient Information</h3>
-            <div className="modal-grid mobile-form-grid">
-              <div className="form-group form-group-mobile">
-                <label className="modal-label">Patient *</label>
-                <select
-                  required
-                  value={newPrescription.patient_ref}
-                  onChange={(e) => handleInputChange('patient_ref', e.target.value)}
-                  className="modal-select form-input-mobile"
-                >
-                  <option value="">Select Patient</option>
-                  {patients.map(patient => (
-                    <option key={patient.patient_id} value={patient.patient_id}>
-                      {patient.name} ({patient.patient_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group form-group-mobile">
-                <label className="modal-label">Follow-up Date</label>
-                <input
-                  type="date"
-                  value={newPrescription.follow_up_date}
-                  onChange={(e) => handleInputChange('follow_up_date', e.target.value)}
-                  className="modal-input form-input-mobile"
-                />
-              </div>
+        <div className="modal-form">
+          <div className="modal-grid mobile-form-grid">
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Patient *</label>
+              <select
+                required
+                value={newPrescription.patient}
+                onChange={(e) => handleInputChange('patient', e.target.value)}
+                className="modal-select form-input-mobile"
+              >
+                <option value="">Select Patient</option>
+                {patients.map(patient => (
+                  <option key={patient} value={patient}>{patient}</option>
+                ))}
+              </select>
             </div>
 
             <div className="form-group form-group-mobile">
-              <label className="modal-label">Diagnosis *</label>
+              <label className="modal-label">Date *</label>
+              <input
+                type="date"
+                required
+                value={newPrescription.date}
+                onChange={(e) => handleInputChange('date', e.target.value)}
+                className="modal-input form-input-mobile"
+              />
+            </div>
+          </div>
+
+          <div className="modal-grid mobile-form-grid">
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Medicine *</label>
+              <select
+                required
+                value={newPrescription.medicine}
+                onChange={(e) => handleInputChange('medicine', e.target.value)}
+                className="modal-select form-input-mobile"
+              >
+                <option value="">Select Medicine</option>
+                {commonMedicines.map(medicine => (
+                  <option key={medicine} value={medicine}>{medicine}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Dosage *</label>
+              <select
+                required
+                value={newPrescription.dosage}
+                onChange={(e) => handleInputChange('dosage', e.target.value)}
+                className="modal-select form-input-mobile"
+              >
+                <option value="">Select Dosage</option>
+                {dosageOptions.map(dosage => (
+                  <option key={dosage} value={dosage}>{dosage}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="modal-grid mobile-form-grid">
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Frequency *</label>
+              <select
+                required
+                value={newPrescription.frequency}
+                onChange={(e) => handleInputChange('frequency', e.target.value)}
+                className="modal-select form-input-mobile"
+              >
+                <option value="">Select Frequency</option>
+                {frequencyOptions.map(frequency => (
+                  <option key={frequency} value={frequency}>{frequency}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Duration *</label>
               <input
                 type="text"
                 required
-                value={newPrescription.diagnosis}
-                onChange={(e) => handleInputChange('diagnosis', e.target.value)}
+                value={newPrescription.duration}
+                onChange={(e) => handleInputChange('duration', e.target.value)}
                 className="modal-input form-input-mobile"
-                placeholder="Enter diagnosis..."
-              />
-            </div>
-
-            <div className="form-group form-group-mobile">
-              <label className="modal-label">Symptoms</label>
-              <textarea
-                rows="2"
-                value={newPrescription.symptoms}
-                onChange={(e) => handleInputChange('symptoms', e.target.value)}
-                className="modal-textarea form-input-mobile"
-                placeholder="Patient symptoms..."
+                placeholder="e.g., 5 days, 2 weeks, As needed"
               />
             </div>
           </div>
 
-          {/* Medicines Section */}
-          <div className="space-y-4 mb-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-800">Medicines</h3>
-              <button
-                type="button"
-                onClick={addMedicine}
-                className="btn btn-sm btn-primary"
-              >
-                <i className="fas fa-plus mr-2"></i> Add Medicine
-              </button>
-            </div>
-
-            {newPrescription.medicines.map((medicine, index) => (
-              <div key={index} className="border rounded-lg p-4 space-y-4 bg-gray-50">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-medium">Medicine {index + 1}</h4>
-                  {newPrescription.medicines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeMedicine(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      <i className="fas fa-trash"></i>
-                    </button>
-                  )}
-                </div>
-
-                <div className="modal-grid mobile-form-grid">
-                  <div className="form-group form-group-mobile col-span-2">
-                    <label className="modal-label">Medicine Search *</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={medicineSearchQuery && index === newPrescription.medicines.length - 1 ? medicineSearchQuery : medicine.medicine_name}
-                        onChange={(e) => {
-                          if (index === newPrescription.medicines.length - 1) {
-                            setMedicineSearchQuery(e.target.value)
-                            handleMedicineSearch(e.target.value)
-                          } else {
-                            updateMedicine(index, 'medicine_name', e.target.value)
-                          }
-                        }}
-                        className="modal-input form-input-mobile"
-                        placeholder="Search medicine by name..."
-                      />
-                      {searchingMedicines && index === newPrescription.medicines.length - 1 && (
-                        <div className="absolute right-2 top-2">
-                          <i className="fas fa-spinner fa-spin text-gray-400"></i>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Medicine Search Results */}
-                    {medicineSearchResults.length > 0 && index === newPrescription.medicines.length - 1 && (
-                      <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto mt-1">
-                        {medicineSearchResults.map((result, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => selectMedicine(index, result)}
-                            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="font-medium">{result.brand_name || result.generic_name}</div>
-                            <div className="text-sm text-gray-600">
-                              {result.generic_name} {result.strength} - {result.dosage_form}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Stock: {result.available_qty} ({result.stock_status})
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Quantity *</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={medicine.quantity}
-                      onChange={(e) => updateMedicine(index, 'quantity', parseInt(e.target.value))}
-                      className="modal-input form-input-mobile"
-                    />
-                  </div>
-
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Dosage *</label>
-                    <input
-                      type="text"
-                      required
-                      value={medicine.dosage_text}
-                      onChange={(e) => updateMedicine(index, 'dosage_text', e.target.value)}
-                      className="modal-input form-input-mobile"
-                      placeholder="e.g., 1 tablet, 5ml"
-                    />
-                  </div>
-                </div>
-
-                <div className="modal-grid mobile-form-grid">
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Frequency *</label>
-                    <select
-                      required
-                      value={medicine.frequency}
-                      onChange={(e) => updateMedicine(index, 'frequency', e.target.value)}
-                      className="modal-select form-input-mobile"
-                    >
-                      <option value="">Select Frequency</option>
-                      {frequencyOptions.map(freq => (
-                        <option key={freq} value={freq}>{freq}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Duration (days) *</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={medicine.duration_days}
-                      onChange={(e) => updateMedicine(index, 'duration_days', parseInt(e.target.value))}
-                      className="modal-input form-input-mobile"
-                    />
-                  </div>
-                </div>
-
-                <div className="modal-grid mobile-form-grid">
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Route</label>
-                    <select
-                      value={medicine.route}
-                      onChange={(e) => updateMedicine(index, 'route', e.target.value)}
-                      className="modal-select form-input-mobile"
-                    >
-                      {routeOptions.map(route => (
-                        <option key={route} value={route}>{route}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group form-group-mobile">
-                    <label className="modal-label">Food Instructions</label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={medicine.before_food}
-                          onChange={(e) => updateMedicine(index, 'before_food', e.target.checked)}
-                          className="mr-2"
-                        />
-                        Before Food
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={medicine.after_food}
-                          onChange={(e) => updateMedicine(index, 'after_food', e.target.checked)}
-                          className="mr-2"
-                        />
-                        After Food
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group form-group-mobile">
-                  <label className="modal-label">Instructions</label>
-                  <textarea
-                    rows="2"
-                    value={medicine.instructions}
-                    onChange={(e) => updateMedicine(index, 'instructions', e.target.value)}
-                    className="modal-textarea form-input-mobile"
-                    placeholder="Specific instructions for this medicine..."
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Additional Instructions */}
-          <div className="space-y-4">
-            <div className="form-group form-group-mobile">
-              <label className="modal-label">General Instructions</label>
-              <textarea
-                rows="2"
-                value={newPrescription.general_instructions}
-                onChange={(e) => handleInputChange('general_instructions', e.target.value)}
-                className="modal-textarea form-input-mobile"
-                placeholder="General instructions for the patient..."
-              />
-            </div>
-
-            <div className="form-group form-group-mobile">
-              <label className="modal-label">Diet Instructions</label>
-              <textarea
-                rows="2"
-                value={newPrescription.diet_instructions}
-                onChange={(e) => handleInputChange('diet_instructions', e.target.value)}
-                className="modal-textarea form-input-mobile"
-                placeholder="Dietary instructions..."
-              />
-            </div>
+          <div className="form-group form-group-mobile">
+            <label className="modal-label">Instructions</label>
+            <textarea
+              rows="3"
+              value={newPrescription.instructions}
+              onChange={(e) => handleInputChange('instructions', e.target.value)}
+              className="modal-textarea form-input-mobile"
+              placeholder="Special instructions for the patient..."
+            />
           </div>
 
           <div className="modal-footer">
@@ -713,153 +436,132 @@ const Prescriptions = () => {
             <button
               type="button"
               onClick={handleCreatePrescription}
-              disabled={loading}
+              disabled={!newPrescription.patient || !newPrescription.medicine || !newPrescription.dosage || !newPrescription.frequency || !newPrescription.duration}
               className="modal-btn modal-btn-primary btn-mobile"
             >
-              {loading ? 'Creating...' : 'Create Prescription'}
+              Create Prescription
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* View Prescription Modal */}
+      {/* Edit Prescription Modal */}
       <Modal
-        isOpen={isViewModalOpen}
+        isOpen={isEditModalOpen}
         onClose={() => {
-          setIsViewModalOpen(false)
+          setIsEditModalOpen(false)
           setSelectedPrescription(null)
         }}
-        title="Prescription Details"
-        size="xl"
+        title="Edit Prescription"
+        size="lg"
       >
         {selectedPrescription && (
-          <div className="modal-form max-h-[80vh] overflow-y-auto">
-            {/* Prescription Header */}
-            <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-semibold text-lg">{selectedPrescription.prescription_number}</h3>
-                  <p className="text-gray-600">Date: {selectedPrescription.prescription_date}</p>
-                </div>
-                <div className="text-right">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    selectedPrescription.is_dispensed 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {selectedPrescription.is_dispensed ? 'Dispensed' : 'Pending'}
-                  </span>
-                </div>
+          <div className="modal-form">
+            <div className="modal-grid mobile-form-grid">
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Patient</label>
+                <select
+                  value={selectedPrescription.patient}
+                  onChange={(e) => handleEditInputChange('patient', e.target.value)}
+                  className="modal-select form-input-mobile"
+                >
+                  {patients.map(patient => (
+                    <option key={patient} value={patient}>{patient}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Date</label>
+                <input
+                  type="date"
+                  value={selectedPrescription.date}
+                  onChange={(e) => handleEditInputChange('date', e.target.value)}
+                  className="modal-input form-input-mobile"
+                />
               </div>
             </div>
 
-            {/* Patient and Doctor Info */}
-            <div className="grid grid-cols-2 gap-6 mb-6">
-              <div>
-                <h4 className="font-semibold mb-2">Patient Information</h4>
-                <p><strong>Name:</strong> {selectedPrescription.patient_name}</p>
-                <p><strong>ID:</strong> {selectedPrescription.patient_ref}</p>
+            <div className="modal-grid mobile-form-grid">
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Medicine</label>
+                <select
+                  value={selectedPrescription.medicine}
+                  onChange={(e) => handleEditInputChange('medicine', e.target.value)}
+                  className="modal-select form-input-mobile"
+                >
+                  {commonMedicines.map(medicine => (
+                    <option key={medicine} value={medicine}>{medicine}</option>
+                  ))}
+                </select>
               </div>
-              <div>
-                <h4 className="font-semibold mb-2">Doctor Information</h4>
-                <p><strong>Name:</strong> {selectedPrescription.doctor_name}</p>
+
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Dosage</label>
+                <select
+                  value={selectedPrescription.dosage}
+                  onChange={(e) => handleEditInputChange('dosage', e.target.value)}
+                  className="modal-select form-input-mobile"
+                >
+                  {dosageOptions.map(dosage => (
+                    <option key={dosage} value={dosage}>{dosage}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Medical Information */}
-            <div className="space-y-4 mb-6">
-              <div>
-                <h4 className="font-semibold mb-2">Diagnosis</h4>
-                <p className="bg-gray-50 p-3 rounded">{selectedPrescription.diagnosis}</p>
+            <div className="modal-grid mobile-form-grid">
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Frequency</label>
+                <select
+                  value={selectedPrescription.frequency}
+                  onChange={(e) => handleEditInputChange('frequency', e.target.value)}
+                  className="modal-select form-input-mobile"
+                >
+                  {frequencyOptions.map(frequency => (
+                    <option key={frequency} value={frequency}>{frequency}</option>
+                  ))}
+                </select>
               </div>
-              
-              {selectedPrescription.symptoms && (
-                <div>
-                  <h4 className="font-semibold mb-2">Symptoms</h4>
-                  <p className="bg-gray-50 p-3 rounded">{selectedPrescription.symptoms}</p>
-                </div>
-              )}
-            </div>
 
-            {/* Medicines */}
-            <div className="mb-6">
-              <h4 className="font-semibold mb-3">Medicines ({selectedPrescription.medicines?.length || 0})</h4>
-              <div className="space-y-3">
-                {selectedPrescription.medicines?.map((medicine, index) => (
-                  <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p><strong>Medicine:</strong> {medicine.brand_name || medicine.medicine_name}</p>
-                        <p><strong>Generic:</strong> {medicine.generic_name}</p>
-                        <p><strong>Dosage:</strong> {medicine.dosage_text}</p>
-                        <p><strong>Quantity:</strong> {medicine.quantity}</p>
-                      </div>
-                      <div>
-                        <p><strong>Frequency:</strong> {medicine.frequency}</p>
-                        <p><strong>Duration:</strong> {medicine.duration_days} days</p>
-                        <p><strong>Route:</strong> {medicine.route}</p>
-                        <div>
-                          <strong>Food:</strong> 
-                          {medicine.before_food && <span className="ml-1">Before</span>}
-                          {medicine.after_food && <span className="ml-1">After</span>}
-                          {!medicine.before_food && !medicine.after_food && <span className="ml-1">No restriction</span>}
-                        </div>
-                      </div>
-                    </div>
-                    {medicine.instructions && (
-                      <div className="mt-3">
-                        <p><strong>Instructions:</strong> {medicine.instructions}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="form-group form-group-mobile">
+                <label className="modal-label">Duration</label>
+                <input
+                  type="text"
+                  value={selectedPrescription.duration}
+                  onChange={(e) => handleEditInputChange('duration', e.target.value)}
+                  className="modal-input form-input-mobile"
+                />
               </div>
             </div>
 
-            {/* Additional Instructions */}
-            {(selectedPrescription.general_instructions || selectedPrescription.diet_instructions) && (
-              <div className="space-y-3 mb-6">
-                {selectedPrescription.general_instructions && (
-                  <div>
-                    <h4 className="font-semibold mb-2">General Instructions</h4>
-                    <p className="bg-gray-50 p-3 rounded">{selectedPrescription.general_instructions}</p>
-                  </div>
-                )}
-                
-                {selectedPrescription.diet_instructions && (
-                  <div>
-                    <h4 className="font-semibold mb-2">Diet Instructions</h4>
-                    <p className="bg-gray-50 p-3 rounded">{selectedPrescription.diet_instructions}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Follow-up Date */}
-            {selectedPrescription.follow_up_date && (
-              <div className="mb-6">
-                <h4 className="font-semibold mb-2">Follow-up Date</h4>
-                <p className="bg-gray-50 p-3 rounded">{selectedPrescription.follow_up_date}</p>
-              </div>
-            )}
+            <div className="form-group form-group-mobile">
+              <label className="modal-label">Instructions</label>
+              <textarea
+                rows="3"
+                value={selectedPrescription.instructions}
+                onChange={(e) => handleEditInputChange('instructions', e.target.value)}
+                className="modal-textarea form-input-mobile"
+              />
+            </div>
 
             <div className="modal-footer">
               <button
                 type="button"
                 onClick={() => {
-                  setIsViewModalOpen(false)
+                  setIsEditModalOpen(false)
                   setSelectedPrescription(null)
                 }}
                 className="modal-btn modal-btn-secondary btn-mobile"
               >
-                Close
+                Cancel
               </button>
               <button
                 type="button"
-                onClick={() => handleDownloadPDF(selectedPrescription)}
+                onClick={handleUpdatePrescription}
                 className="modal-btn modal-btn-primary btn-mobile"
               >
-                <i className="fas fa-download mr-2"></i> Download PDF
+                Update Prescription
               </button>
             </div>
           </div>
